@@ -1,6 +1,6 @@
 {
 	"name": "@mysten/walletconnect-wallet",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"description": "Wallet adapter for WalletConnect on Sui",
 	"license": "Apache-2.0",
 	"author": "Mysten Labs <build@mystenlabs.com>",
@@ -10,7 +10,8 @@
 	"exports": {
 		".": {
 			"types": "./dist/index.d.mts",
-			"import": "./dist/index.mjs"
+			"import": "./dist/index.mjs",
+			"default": "./dist/index.mjs"
 		}
 	},
 	"sideEffects": false,

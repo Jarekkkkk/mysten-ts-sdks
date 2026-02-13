@@ -3,7 +3,7 @@
 	"author": "Mysten Labs <build@mystenlabs.com>",
 	"description": "Framework-agnostic toolkit for building decentralized applications on Sui.",
 	"homepage": "https://sdk.mystenlabs.com/sui",
-	"version": "1.0.2",
+	"version": "1.0.4",
 	"license": "Apache-2.0",
 	"files": [
 		"CHANGELOG.md",
@@ -19,11 +19,13 @@
 	"exports": {
 		".": {
 			"types": "./dist/index.d.mts",
-			"import": "./dist/index.mjs"
+			"import": "./dist/index.mjs",
+			"default": "./dist/index.mjs"
 		},
 		"./web": {
 			"types": "./dist/web/index.d.mts",
-			"import": "./dist/web/index.mjs"
+			"import": "./dist/web/index.mjs",
+			"default": "./dist/web/index.mjs"
 		}
 	},
 	"scripts": {

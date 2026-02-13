@@ -163,6 +163,38 @@ export class DeepBookClient {
 	}
 
 	/**
+	 * @description Check the balance of a BalanceManager by its address directly
+	 * @param {string} managerAddress The on-chain address of the BalanceManager
+	 * @param {string} coinKey Key of the coin
+	 * @returns {Promise<{ coinType: string, balance: number }>} An object with coin type and balance
+	 */
+	async checkManagerBalanceWithAddress(managerAddress: string, coinKey: string) {
+		const tx = new Transaction();
+		const coin = this.#config.getCoin(coinKey);
+
+		tx.moveCall({
+			target: `${this.#config.DEEPBOOK_PACKAGE_ID}::balance_manager::balance`,
+			arguments: [tx.object(managerAddress)],
+			typeArguments: [coin.type],
+		});
+
+		const res = await this.#client.core.simulateTransaction({
+			transaction: tx,
+			include: { commandResults: true, effects: true },
+		});
+
+		const bytes = res.commandResults![0].returnValues[0].bcs;
+		const parsed_balance = bcs.U64.parse(bytes);
+		const balanceNumber = Number(parsed_balance);
+		const adjusted_balance = balanceNumber / coin.scalar;
+
+		return {
+			coinType: coin.type,
+			balance: Number(adjusted_balance.toFixed(9)),
+		};
+	}
+
+	/**
 	 * @description Check if a pool is whitelisted
 	 * @param {string} poolKey Key of the pool
 	 * @returns {Promise<boolean>} Boolean indicating if the pool is whitelisted
@@ -912,6 +944,104 @@ export class DeepBookClient {
 	}
 
 	/**
+	 * @description Batch update price info objects for multiple coins. Only updates stale feeds.
+	 * This is more efficient than calling getPriceInfoObject multiple times as it:
+	 * 1. Batch fetches all price info object ages in one RPC call
+	 * 2. Fetches all stale price updates from Pyth in a single API call
+	 * @param {Transaction} tx Transaction to add price update commands to
+	 * @param {string[]} coinKeys Array of coin keys to update prices for
+	 * @returns {Promise<Record<string, string>>} Map of coinKey -> priceInfoObjectId
+	 */
+	async getPriceInfoObjects(tx: Transaction, coinKeys: string[]): Promise<Record<string, string>> {
+		if (coinKeys.length === 0) {
+			return {};
+		}
+
+		const currentTime = Date.now();
+
+		// Build map of coinKey -> priceInfoObjectId and collect all object IDs
+		const coinToObjectId: Record<string, string> = {};
+		const objectIds: string[] = [];
+		for (const coinKey of coinKeys) {
+			const priceInfoObjectId = this.#config.getCoin(coinKey).priceInfoObjectId!;
+			coinToObjectId[coinKey] = priceInfoObjectId;
+			objectIds.push(priceInfoObjectId);
+		}
+
+		// Batch fetch all price info objects in one RPC call
+		const res = await this.#client.core.getObjects({
+			objectIds,
+			include: { content: true },
+		});
+
+		// Parse each object and determine which are stale
+		const staleCoinKeys: string[] = [];
+		const result: Record<string, string> = {};
+
+		for (let i = 0; i < coinKeys.length; i++) {
+			const coinKey = coinKeys[i];
+			const obj = res.objects[i];
+
+			if (obj instanceof Error || !obj?.content) {
+				// If we can't fetch the object, mark it as stale to force update
+				staleCoinKeys.push(coinKey);
+				continue;
+			}
+
+			const priceInfoObject = PriceInfoObject.parse(obj.content);
+			const arrivalTime = Number(priceInfoObject.price_info.arrival_time);
+			const age = currentTime - arrivalTime * 1000;
+
+			if (age >= PRICE_INFO_OBJECT_MAX_AGE_MS) {
+				staleCoinKeys.push(coinKey);
+			} else {
+				// Fresh price, just return the existing object ID
+				result[coinKey] = coinToObjectId[coinKey];
+			}
+		}
+
+		// If no stale feeds, return early
+		if (staleCoinKeys.length === 0) {
+			return result;
+		}
+
+		// Collect all feed IDs for stale coins
+		const staleFeedIds: string[] = [];
+		const feedIdToCoinKey: Record<string, string> = {};
+		for (const coinKey of staleCoinKeys) {
+			const feedId = this.#config.getCoin(coinKey).feed!;
+			staleFeedIds.push(feedId);
+			feedIdToCoinKey[feedId] = coinKey;
+		}
+
+		// Initialize connection to the Sui Price Service
+		const endpoint =
+			this.#config.network === 'testnet'
+				? 'https://hermes-beta.pyth.network'
+				: 'https://hermes.pyth.network';
+		const connection = new SuiPriceServiceConnection(endpoint);
+
+		// Fetch all stale price updates from Pyth in a single API call
+		const priceUpdateData = await connection.getPriceFeedsUpdateData(staleFeedIds);
+
+		// Initialize Pyth Client
+		const wormholeStateId = this.#config.pyth.wormholeStateId;
+		const pythStateId = this.#config.pyth.pythStateId;
+		const pythClient = new SuiPythClient(this.#client, pythStateId, wormholeStateId);
+
+		// Update all stale feeds in the transaction
+		const updatedObjectIds = await pythClient.updatePriceFeeds(tx, priceUpdateData, staleFeedIds);
+
+		// Map the updated object IDs back to coin keys
+		for (let i = 0; i < staleFeedIds.length; i++) {
+			const coinKey = feedIdToCoinKey[staleFeedIds[i]];
+			result[coinKey] = updatedObjectIds[i];
+		}
+
+		return result;
+	}
+
+	/**
 	 * @description Get the age of the price info object for a specific coin
 	 * @param {string} coinKey Key of the coin
 	 * @returns {Promise<number>} The arrival time of the price info object
@@ -1604,6 +1734,153 @@ export class DeepBookClient {
 			lowestTriggerAbovePrice,
 			highestTriggerBelowPrice,
 		};
+	}
+
+	/**
+	 * @description Get comprehensive state information for multiple margin managers.
+	 * @param {Record<string, string>} marginManagers Map of marginManagerId -> poolKey
+	 * @param {number} decimals Number of decimal places for formatting (default: 6)
+	 * @returns {Promise<Record<string, {...}>>} Object keyed by managerId with state data
+	 */
+	async getMarginManagerStates(
+		marginManagers: Record<string, string>,
+		decimals: number = 6,
+	): Promise<
+		Record<
+			string,
+			{
+				managerId: string;
+				deepbookPoolId: string;
+				riskRatio: number;
+				baseAsset: string;
+				quoteAsset: string;
+				baseDebt: string;
+				quoteDebt: string;
+				basePythPrice: string;
+				basePythDecimals: number;
+				quotePythPrice: string;
+				quotePythDecimals: number;
+				currentPrice: bigint;
+				lowestTriggerAbovePrice: bigint;
+				highestTriggerBelowPrice: bigint;
+			}
+		>
+	> {
+		const entries = Object.entries(marginManagers);
+		if (entries.length === 0) {
+			return {};
+		}
+
+		const tx = new Transaction();
+
+		// Add a managerState call for each margin manager
+		for (const [managerId, poolKey] of entries) {
+			tx.add(this.marginManager.managerState(poolKey, managerId));
+		}
+
+		const res = await this.#client.core.simulateTransaction({
+			transaction: tx,
+			include: { commandResults: true, effects: true },
+		});
+
+		if (res.FailedTransaction) {
+			throw new Error(
+				`Transaction failed: ${res.FailedTransaction.status.error?.message || 'Unknown error'}`,
+			);
+		}
+
+		if (!res.commandResults) {
+			throw new Error(`Failed to get margin manager states: Unknown error`);
+		}
+
+		const results: Record<
+			string,
+			{
+				managerId: string;
+				deepbookPoolId: string;
+				riskRatio: number;
+				baseAsset: string;
+				quoteAsset: string;
+				baseDebt: string;
+				quoteDebt: string;
+				basePythPrice: string;
+				basePythDecimals: number;
+				quotePythPrice: string;
+				quotePythDecimals: number;
+				currentPrice: bigint;
+				lowestTriggerAbovePrice: bigint;
+				highestTriggerBelowPrice: bigint;
+			}
+		> = {};
+
+		// Parse each command result
+		for (let i = 0; i < entries.length; i++) {
+			const commandResult = res.commandResults[i];
+			if (!commandResult || !commandResult.returnValues) {
+				throw new Error(`Failed to get margin manager state for index ${i}: No return values`);
+			}
+
+			const [, poolKey] = entries[i];
+			const pool = this.#config.getPool(poolKey);
+			const baseCoin = this.#config.getCoin(pool.baseCoin);
+			const quoteCoin = this.#config.getCoin(pool.quoteCoin);
+
+			const managerId = normalizeSuiAddress(bcs.Address.parse(commandResult.returnValues[0].bcs));
+			const deepbookPoolId = normalizeSuiAddress(
+				bcs.Address.parse(commandResult.returnValues[1].bcs),
+			);
+			const riskRatio = Number(bcs.U64.parse(commandResult.returnValues[2].bcs)) / FLOAT_SCALAR;
+			const baseAsset = this.#formatTokenAmount(
+				BigInt(bcs.U64.parse(commandResult.returnValues[3].bcs)),
+				baseCoin.scalar,
+				decimals,
+			);
+			const quoteAsset = this.#formatTokenAmount(
+				BigInt(bcs.U64.parse(commandResult.returnValues[4].bcs)),
+				quoteCoin.scalar,
+				decimals,
+			);
+			const baseDebt = this.#formatTokenAmount(
+				BigInt(bcs.U64.parse(commandResult.returnValues[5].bcs)),
+				baseCoin.scalar,
+				decimals,
+			);
+			const quoteDebt = this.#formatTokenAmount(
+				BigInt(bcs.U64.parse(commandResult.returnValues[6].bcs)),
+				quoteCoin.scalar,
+				decimals,
+			);
+			const basePythPrice = bcs.U64.parse(commandResult.returnValues[7].bcs);
+			const basePythDecimals = Number(
+				bcs.u8().parse(new Uint8Array(commandResult.returnValues[8].bcs)),
+			);
+			const quotePythPrice = bcs.U64.parse(commandResult.returnValues[9].bcs);
+			const quotePythDecimals = Number(
+				bcs.u8().parse(new Uint8Array(commandResult.returnValues[10].bcs)),
+			);
+			const currentPrice = BigInt(bcs.U64.parse(commandResult.returnValues[11].bcs));
+			const lowestTriggerAbovePrice = BigInt(bcs.U64.parse(commandResult.returnValues[12].bcs));
+			const highestTriggerBelowPrice = BigInt(bcs.U64.parse(commandResult.returnValues[13].bcs));
+
+			results[managerId] = {
+				managerId,
+				deepbookPoolId,
+				riskRatio,
+				baseAsset,
+				quoteAsset,
+				baseDebt,
+				quoteDebt,
+				basePythPrice: basePythPrice.toString(),
+				basePythDecimals,
+				quotePythPrice: quotePythPrice.toString(),
+				quotePythDecimals,
+				currentPrice,
+				lowestTriggerAbovePrice,
+				highestTriggerBelowPrice,
+			};
+		}
+
+		return results;
 	}
 
 	/**

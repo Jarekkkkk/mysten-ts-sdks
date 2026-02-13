@@ -2,7 +2,7 @@
 	"name": "@mysten/suins",
 	"author": "Mysten Labs <build@mystenlabs.com>",
 	"description": "SuiNS SDK",
-	"version": "1.0.0",
+	"version": "1.0.2",
 	"license": "Apache-2.0",
 	"private": false,
 	"type": "module",
@@ -16,7 +16,8 @@
 	"exports": {
 		".": {
 			"types": "./dist/index.d.mts",
-			"import": "./dist/index.mjs"
+			"import": "./dist/index.mjs",
+			"default": "./dist/index.mjs"
 		}
 	},
 	"sideEffects": false,
@@ -41,7 +42,7 @@
 		"node": ">=16"
 	},
 	"dependencies": {
-		"axios": "^1.13.2",
+		"axios": "^1.13.5",
 		"axios-retry": "^4.5.0"
 	},
 	"devDependencies": {

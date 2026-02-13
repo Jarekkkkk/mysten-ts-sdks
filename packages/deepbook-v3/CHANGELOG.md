@@ -1,5 +1,62 @@
 # @mysten/deepbook-v3
 
+## 1.0.9
+
+### Patch Changes
+
+- 5b220df: Update USDE to SUIUSDE in constants
+
+## 1.0.8
+
+### Patch Changes
+
+- 63ca077: Margin ID Update
+- 3d53583: Improve typing of generated bcs tuples
+- 1232202: New method checkManagerBalanceWithAddress. Pyth config for USDE.
+
+## 1.0.7
+
+### Patch Changes
+
+- 99d1e00: Add default export condition
+- Updated dependencies [99d1e00]
+  - @mysten/bcs@2.0.2
+  - @mysten/sui@2.3.2
+
+## 1.0.6
+
+### Patch Changes
+
+- ad9a3a4: Price added function
+
+## 1.0.5
+
+### Patch Changes
+
+- 65550fe: Update executeConditionalOrders for composability
+
+## 1.0.4
+
+### Patch Changes
+
+- b1bf6fd: Batch pyth price feed updates, stale feeds older than 30 seconds
+- Updated dependencies [265ec25]
+  - @mysten/sui@2.3.1
+
+## 1.0.3
+
+### Patch Changes
+
+- bb40431: USDE Pools added
+
+## 1.0.2
+
+### Patch Changes
+
+- 3651a5f: Fix Pyth price table lookup to use getDynamicObjectField and correctly parse Wormhole
+  state using WormholeState schema
+- 1baa679: Margin manager states function
+
 ## 1.0.1
 
 ### Patch Changes

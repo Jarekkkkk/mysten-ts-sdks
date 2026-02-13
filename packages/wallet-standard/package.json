@@ -1,6 +1,6 @@
 {
 	"name": "@mysten/wallet-standard",
-	"version": "0.20.0",
+	"version": "0.20.1",
 	"description": "A suite of standard utilities for implementing wallets based on the Wallet Standard.",
 	"license": "Apache-2.0",
 	"author": "Mysten Labs <build@mystenlabs.com>",
@@ -10,7 +10,8 @@
 	"exports": {
 		".": {
 			"types": "./dist/index.d.mts",
-			"import": "./dist/index.mjs"
+			"import": "./dist/index.mjs",
+			"default": "./dist/index.mjs"
 		}
 	},
 	"sideEffects": false,

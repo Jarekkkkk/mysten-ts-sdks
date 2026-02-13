@@ -1,5 +1,41 @@
 # @mysten/sui.js
 
+## 2.4.0
+
+### Minor Changes
+
+- 5270eaf: Add `isValidStructTag` validation utility. `isValidNamedType` now also validates the full
+  struct tag structure (completing the TODO that previously returned `true` unconditionally).
+
+## 2.3.2
+
+### Patch Changes
+
+- 99d1e00: Add default export condition
+- Updated dependencies [99d1e00]
+  - @mysten/utils@0.3.1
+  - @mysten/bcs@2.0.2
+
+## 2.3.1
+
+### Patch Changes
+
+- 265ec25: Add `isPreparedForSerialization` method to Transaction class for checking if a
+  transaction is ready for JSON serialization. Update `Transaction.from` to validate that
+  transactions are prepared before copying and automatically register the CoinWithBalance intent
+  resolver when needed.
+
+## 2.3.0
+
+### Minor Changes
+
+- 724a13a: Improve handling of clever errors during simulation
+
+### Patch Changes
+
+- fcbf952: Fix `$extend` chaining so that `client.$extend(sdk1()).$extend(sdk2())` works correctly.
+  Previously, the second `$extend` call would lose the extensions from the first call.
+
 ## 2.2.0
 
 ### Minor Changes

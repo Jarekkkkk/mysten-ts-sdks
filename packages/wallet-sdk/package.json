@@ -1,6 +1,6 @@
 {
 	"name": "@mysten/wallet-sdk",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"private": false,
 	"description": "Utilities for building Sui wallets",
 	"license": "Apache-2.0",
@@ -11,7 +11,8 @@
 	"exports": {
 		".": {
 			"types": "./dist/index.d.mts",
-			"import": "./dist/index.mjs"
+			"import": "./dist/index.mjs",
+			"default": "./dist/index.mjs"
 		}
 	},
 	"sideEffects": false,
